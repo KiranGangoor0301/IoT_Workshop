@@ -1,27 +1,22 @@
-int BUZZER=6;
-int RELAY=5;
-int ir_sensor=8;
-int ldr=7;
-void setup() {
-  // pinMode(ir_sensor, INPUT);
-  pinMode(ldr,INPUT);
-  pinMode(BUZZER,OUTPUT);
-  pinMode(RELAY,OUTPUT);
+#include <ESP32Servo.h>
 
+Servo myservo;
+int pos = 0;
+
+void setup() {
+  Serial.begin(115200);
+  myservo.attach(7);
 }
 
 void loop() {
-  
-  int data=digitalRead(ldr);
-  if(data==1)
-  {
-    digitalWrite(BUZZER,HIGH);
-  }
-  else
-  {
-    digitalWrite(BUZZER,LOW);
-  }
-  
-  Serial.println(data);
 
+  for (pos = 0; pos <= 180; pos += 1) {
+    myservo.write(pos);
+    delay(15);
+  }
+  
+  for (pos = 0; pos >= 180; pos -= 1) {
+    myservo.write(pos);
+    delay(15);
+  }
 }
