@@ -1,0 +1,129 @@
+#include <Arduino.h>
+#include <WiFi.h>
+#include <FirebaseESP32.h>
+#include <HTTPClient.h>
+#include <addons/TokenHelper.h>
+#include <addons/RTDBHelper.h>
+
+// Define Wi-Fi and Firebase credentials
+#define WIFI_SSID "manish"
+#define WIFI_PASSWORD "12345678"
+#define API_KEY "AIzaSyBV81UN2h17cvp3xsQGmp1fxheQtEYuLwY"
+#define DATABASE_URL "traffic-3b67e-default-rtdb.firebaseio.com/"
+#define USER_EMAIL "manoj998620@gmail.com"
+#define USER_PASSWORD "manoj@14999"
+
+// Define Twilio credentials
+#define TWILIO_ACCOUNT_SID "AC5ec0fe85d1ae6f300257dd58d450bdd1"
+#define TWILIO_AUTH_TOKEN "69151dfcb47e974290bbaea9993871f1"
+#define TWILIO_PHONE_NUMBER "+12565308967"  // Your Twilio phone number
+
+// Define recipient phone numbers
+String recipientPhoneNumbers[] = {
+    "+917676869378",
+    "+916361856259", // Add more numbers as needed
+};
+
+// Define sensor pins
+#define TRIG_PIN 7  
+#define ECHO_PIN 8
+
+FirebaseData fbdo;
+FirebaseAuth auth;
+FirebaseConfig config;
+
+void setup() {
+    Serial.begin(115200);
+    pinMode(TRIG_PIN, OUTPUT);
+    pinMode(ECHO_PIN, INPUT);
+    
+    // Connect to Wi-Fi
+    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+    Serial.print("Connecting to Wi-Fi");
+    while (WiFi.status() != WL_CONNECTED) {
+        Serial.print(".");
+        delay(300);
+    }
+    Serial.println();
+    Serial.print("Connected with IP: ");
+    Serial.println(WiFi.localIP());
+
+    // Initialize Firebase
+    config.api_key = API_KEY;
+    config.database_url = DATABASE_URL;
+    config.token_status_callback = tokenStatusCallback;
+    auth.user.email = USER_EMAIL;
+    auth.user.password = USER_PASSWORD;
+
+    Firebase.begin(&config, &auth);
+    Firebase.reconnectNetwork(true);
+
+    Serial.printf("Firebase Client v%s\n\n", FIREBASE_CLIENT_VERSION);
+}
+
+float getDistance() {
+    digitalWrite(TRIG_PIN, LOW);
+    delayMicroseconds(2);
+    digitalWrite(TRIG_PIN, HIGH);
+    delayMicroseconds(10);
+    digitalWrite(TRIG_PIN, LOW);
+    
+    long duration = pulseIn(ECHO_PIN, HIGH);
+    float distance = duration * 0.034 / 2;
+    
+    return distance;
+}
+
+void sendSMSNotification(float distance) {
+    HTTPClient http;
+    String url = "https://api.twilio.com/2010-04-01/Accounts/" + String(TWILIO_ACCOUNT_SID) + "/Messages.json";
+
+    String messageBody = "Alert! Distance detected is " + String(distance) + " cm.";
+
+    // Loop through all recipient phone numbers
+    for (int i = 0; i < sizeof(recipientPhoneNumbers) / sizeof(recipientPhoneNumbers[0]); i++) {
+        String requestBody = "To=" + recipientPhoneNumbers[i] +
+                             "&From=" + String(TWILIO_PHONE_NUMBER) +
+                             "&Body=" + messageBody;
+
+        http.begin(url);
+        http.setAuthorization(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
+        http.addHeader("Content-Type", "application/x-www-form-urlencoded");
+
+        int httpResponseCode = http.POST(requestBody);
+
+        if (httpResponseCode > 0) {
+            Serial.println("SMS Sent Successfully to " + recipientPhoneNumbers[i]);
+            Serial.print("Message: ");
+            Serial.println(messageBody);
+        } else {
+            Serial.printf("Error sending SMS to %s: %s\n", recipientPhoneNumbers[i].c_str(), http.errorToString(httpResponseCode).c_str());
+        }
+
+        http.end();
+    }
+}
+
+void loop() {
+    if (Firebase.ready()) {
+        float distance = getDistance();
+        Serial.print("Distance: ");
+        Serial.print(distance);
+        Serial.println(" cm");
+        
+        String path = "/sensor/ultrasonic/distance";  // Define your Firebase path
+        if (Firebase.setFloat(fbdo, path.c_str(), distance)) {
+            Serial.println("Data sent to Firebase");
+        } else {
+            Serial.print("Failed to send data: ");
+            Serial.println(fbdo.errorReason());
+        }
+
+        // Send SMS if the distance is more than 100 cm
+        if (distance > 100.0) {  // Set your threshold here
+            sendSMSNotification(distance);
+        }
+        
+        delay(1000); // Delay for 1 second
+    }
+}
